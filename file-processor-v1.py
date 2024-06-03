@@ -44,8 +44,11 @@ def process_file_v2(file_name):
 
 # Redis PubSub
 def redis_pubsub():
-    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
-    channel = 'channel'
+    REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+    REDIS_PORT = os.getenv('REDIS_PORT', 6379)
+    redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+    channel = os.getenv('PUB_SUB_CHANNEL', 'channel')
+
     pubsub = redis_client.pubsub()
     pubsub.subscribe(channel)
     print(f"Subscribed to {channel}. Waiting for messages...")
@@ -67,9 +70,9 @@ def websocket_server():
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    server = websockets.serve(handler, 'localhost', 5001)
+    server = websockets.serve(handler, '0.0.0.0', 5001)
     loop.run_until_complete(server)
-    print('WebSocket Started ...')
+    print('WebSocket Server Started ...')
     loop.run_forever()
 
 # Flask server
@@ -88,6 +91,8 @@ def details():
 
 def start_flask_server():
     app.run(port=5000)
+    # from waitress import serve
+    # serve(app, host="0.0.0.0", port=5000)
 
 if __name__ == '__main__':
     # Start Flask server in a separate thread
