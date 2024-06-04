@@ -9,25 +9,11 @@ import asyncio
 app = Flask(__name__)
 message_sink = queue.Queue()
 
-# File processor function
-def process_file(file_name):
-    lines, words, letters = 0, 0, 0
-    try:
-        with open(file_name, 'r') as file:
-            data = file.read()
-        lines = len(data.split('\n'))
-        words = len(data.split())
-        letters = len(data.replace(' ', ''))
-        print(f'File {file_name} has been processed with Lines: {lines}, Words: {words}, Letters: {letters}')
-        return {'lines': lines, 'words': words, 'letters': letters}
-    except Exception as e:
-        print(e)
-        return {'error': str(e)}
-
 def process_file_v2(file_name):
+    FILE_LOOKUP_PATH = os.getenv('FILE_LOOKUP_PATH', '/tmp/upload')
     lines, words, letters = 0, 0, 0
     try:
-        with open(file_name, 'rb') as file:
+        with open(FILE_LOOKUP_PATH + "/" +file_name, 'rb') as file:
             data = file.read()
         try:
             text = data.decode('utf-8')
@@ -86,7 +72,7 @@ def home():
 @app.route('/details', methods=['GET'])
 def details():
     filename = request.args.get('fileName', 'package.json')
-    result = process_file(filename)
+    result = process_file_v2(filename)
     return jsonify(result)
 
 def start_flask_server():
