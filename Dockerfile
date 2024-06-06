@@ -1,4 +1,4 @@
-FROM python:3.12.3
+FROM python:3.12-alpine
 RUN mkdir /usr/application
 WORKDIR /usr/application
 ADD file-processor-v1.py  requirment.txt /usr/application/
