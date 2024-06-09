@@ -58,7 +58,7 @@ def websocket_server():
     asyncio.set_event_loop(loop)
     server = websockets.serve(handler, '0.0.0.0', 5001)
     loop.run_until_complete(server)
-    print('WebSocket Server Started ...')
+    print('WebSocket Server Started on 0.0.0.0:5001 ...')
     loop.run_forever()
 
 # Flask server
@@ -76,9 +76,9 @@ def details():
     return jsonify(result)
 
 def start_flask_server():
-    app.run(port=5000)
-    # from waitress import serve
-    # serve(app, host="0.0.0.0", port=5000)
+    from waitress import serve
+    print('Server Started on 0.0.0.0:5000 ...')
+    serve(app, host="0.0.0.0", port=5000)
 
 if __name__ == '__main__':
     # Start Flask server in a separate thread
