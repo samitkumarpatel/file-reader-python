@@ -1,19 +1,29 @@
+import asyncio
 import threading
-import queue
 import redis
 import websockets
 from flask import Flask, request, jsonify
-import time
 import os
-import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Environment Variables
+flask_host = os.getenv('FLASK_HOST', '0.0.0.0')
+flask_port = int(os.getenv('FLASK_PORT', 5001))
+web_socket_host = os.getenv('WEB_SOCKET_HOST', '0.0.0.0')
+web_socket_port = int(os.getenv('WEB_SOCKET_PORT', 5002))
+redis_host = os.getenv('REDIS_HOST', 'localhost')
+redis_port = int(os.getenv('REDIS_PORT', 6379))
+pub_sub_channel = os.getenv('PUB_SUB_CHANNEL', 'channel')
+file_lookup_path = os.getenv('FILE_LOOKUP_PATH', '/tmp/upload')
+
+# Initialize Flask app
 app = Flask(__name__)
-message_sink = queue.Queue()
+message_sink = asyncio.Queue()
 
 def process_file_v2(file_name):
-    FILE_LOOKUP_PATH = os.getenv('FILE_LOOKUP_PATH', '/tmp/upload')
     lines, words, letters = 0, 0, 0
     try:
-        with open(FILE_LOOKUP_PATH + "/" +file_name, 'rb') as file:
+        with open(os.path.join(file_lookup_path, file_name), 'rb') as file:
             data = file.read()
         try:
             text = data.decode('utf-8')
@@ -28,40 +38,39 @@ def process_file_v2(file_name):
         print(e)
         return {'error': str(e)}
 
-# Redis PubSub
-def redis_pubsub():
-    REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-    REDIS_PORT = os.getenv('REDIS_PORT', 6379)
-    redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=0)
-    channel = os.getenv('PUB_SUB_CHANNEL', 'channel')
-
+async def redis_pubsub():
+    redis_client = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
     pubsub = redis_client.pubsub()
-    pubsub.subscribe(channel)
-    print(f"Subscribed to {channel}. Waiting for messages...")
-    
+    pubsub.subscribe(pub_sub_channel)
+    print(f"Subscribed to {pub_sub_channel}. Waiting for messages...")
+
     for message in pubsub.listen():
         if message['type'] == 'message':
             data = message['data'].decode('utf-8')
             print(f"Received: {data}")
-            message_sink.put('Received Message, Processing it! ...')
+            await message_sink.put('Received Message, Processing it! ...')
             result = process_file_v2(data)
-            message_sink.put(result)
+            await message_sink.put(result)
 
-# WebSocket server
-def websocket_server():
-    async def handler(websocket, path):
+async def websocket_handler(websocket, path):
+    async def send_messages():
         while True:
-            message = message_sink.get()
+            message = await message_sink.get()
             await websocket.send(str(message))
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    server = websockets.serve(handler, '0.0.0.0', 5001)
-    loop.run_until_complete(server)
-    print('WebSocket Server Started on 0.0.0.0:5001 ...')
-    loop.run_forever()
+    sender_task = asyncio.create_task(send_messages())
 
-# Flask server
+    async for message in websocket:
+        print(f"Received: {message}")
+        await message_sink.put(message)
+
+    await sender_task
+
+async def websocket_server():
+    server = await websockets.serve(websocket_handler, web_socket_host, web_socket_port)
+    print(f'WebSocket Server started on {web_socket_host}:{web_socket_port}')
+    await server.wait_closed()
+
 @app.route('/')
 def home():
     ping = request.args.get('ping')
@@ -77,15 +86,22 @@ def details():
 
 def start_flask_server():
     from waitress import serve
-    print('Server Started on 0.0.0.0:5000 ...')
-    serve(app, host="0.0.0.0", port=5000)
+    print(f'Server started on {flask_host}:{flask_port}')
+    serve(app, host=flask_host, port=flask_port)
 
-if __name__ == '__main__':
-    # Start Flask server in a separate thread
-    threading.Thread(target=start_flask_server).start()
+def main():
+    loop = asyncio.get_event_loop()
 
     # Start Redis subscriber in a separate thread
-    threading.Thread(target=redis_pubsub).start()
+    redis_thread = threading.Thread(target=lambda: asyncio.run(redis_pubsub()), daemon=True)
+    redis_thread.start()
+
+    # Start Flask server in a separate thread
+    flask_thread = threading.Thread(target=start_flask_server, daemon=True)
+    flask_thread.start()
 
     # Run WebSocket server in the main thread
-    websocket_server()
+    loop.run_until_complete(websocket_server())
+
+if __name__ == '__main__':
+    main()
