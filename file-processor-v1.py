@@ -56,8 +56,11 @@ async def websocket_handler(websocket, path):
     async def send_messages():
         while True:
             message = await message_sink.get()
-            await websocket.send(str(message))
-
+            print(f"Message from Sink : {message}")
+            if message:
+                await websocket.send(str(message))
+                message_sink.task_done()
+            
     sender_task = asyncio.create_task(send_messages())
 
     async for message in websocket:
